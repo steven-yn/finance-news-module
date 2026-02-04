@@ -64,6 +64,35 @@ SEC EDGAR (Electronic Data Gathering, Analysis, and Retrieval)는 미국 증권�
 
 **중요도**: ★★★ (가장 상세한 정보)
 
+### Form 4 (Insider Trading Report - 내부자 거래)
+**목적**: 임원, 이사, 10% 이상 주주의 주식 거래 공개
+
+**제출 시기**: 거래 후 2 영업일 이내
+
+**포함 내용**:
+- 거래자 정보 (이름, 직위)
+- 거래 유형 (매수/매도)
+- 거래량 및 가격
+- 거래 후 보유량
+
+**중요도**: ★★★ (내부자의 투자 심리 파악)
+
+> **참고**: "내부자 거래 신고"는 불법 거래가 아님. 합법적인 거래를 공개하는 것.
+
+### Form 13F (Institutional Holdings - 기관 보유)
+**목적**: 대형 기관투자자의 분기별 보유 현황 공개
+
+**제출 시기**: 분기 종료 후 45일 이내
+
+**대상**: $100M 이상 운용 기관 (헤지펀드, 뮤추얼펀드, 연기금 등)
+
+**포함 내용**:
+- 보유 종목 리스트
+- 주식 수량 및 가치
+- Put/Call 옵션 보유
+
+**중요도**: ★★ (기관 투자자 동향 파악, 단 45일 지연)
+
 ---
 
 ## API 요구사항
@@ -408,6 +437,78 @@ if __name__ == "__main__":
 
 ---
 
+### 4. Frames API (기간별 집계 데이터)
+
+여러 회사의 특정 항목을 한 번에 집계합니다.
+
+#### 엔드포인트
+```
+GET https://data.sec.gov/api/xbrl/frames/{taxonomy}/{tag}/{unit}/{period}.json
+```
+
+#### 파라미터
+- `taxonomy`: 회계 기준 (예: `us-gaap`)
+- `tag`: 재무 항목 태그 (예: `Revenues`)
+- `unit`: 단위 (예: `USD`)
+- `period`: 기간 형식
+  - 연간: `CY2023` (Calendar Year 2023)
+  - 분기: `CY2023Q1` (Q1 2023)
+  - 순간: `CY2023Q1I` (Q1 2023 Instantaneous)
+
+#### Python 예제
+```python
+def get_frames(taxonomy: str, tag: str, unit: str, period: str) -> dict:
+    """기간별 집계 데이터 가져오기"""
+    url = f"https://data.sec.gov/api/xbrl/frames/{taxonomy}/{tag}/{unit}/{period}.json"
+    headers = {
+        "User-Agent": "FinanceNews admin@example.com"
+    }
+
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+
+    return response.json()
+
+# 2023년 모든 회사의 매출 데이터
+revenues = get_frames("us-gaap", "Revenues", "USD", "CY2023")
+```
+
+---
+
+## RSS 피드 (실시간 공시 알림)
+
+SEC EDGAR는 RSS/Atom 피드를 통해 실시간 공시 알림을 제공합니다.
+
+### 최신 공시 피드
+```
+https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type={FORM_TYPE}&company=&owner=include&count=40&output=atom
+```
+
+### 파라미터
+- `type`: 공시 유형 필터 (예: `8-K`, `10-K`, `4`)
+- `company`: 회사명 검색 (선택)
+- `count`: 결과 개수 (최대 100)
+- `output`: `atom` 또는 `rss`
+
+### 예시 URL
+```
+# 모든 8-K 공시
+https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&output=atom
+
+# 모든 Form 4 (내부자 거래)
+https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&output=atom
+
+# Apple 관련 모든 공시
+https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&company=apple&output=atom
+```
+
+### 구조화된 데이터 피드
+SEC는 10분마다 업데이트되는 구조화된 RSS 피드도 제공합니다:
+- 업데이트 주기: 10분 (월-금, 6am-10pm EST)
+- URL: https://www.sec.gov/structureddata/rss-feeds
+
+---
+
 ## 공시 문서 다운로드
 
 공시 문서 URL 형식:
@@ -571,8 +672,71 @@ def safe_request(url: str, headers: dict, max_retries: int = 3):
 
 ---
 
+## sec-edgar-api 라이브러리 사용
+
+공식 래퍼 라이브러리를 사용하면 더 쉽게 API를 호출할 수 있습니다.
+
+### 설치
+```bash
+pip install sec-edgar-api
+```
+
+### 사용 예제
+```python
+from sec_edgar_api import EdgarClient
+
+# User-Agent 필수
+edgar = EdgarClient(user_agent="FinanceNews admin@example.com")
+
+# 회사 공시 내역 (자동 페이지네이션)
+submissions = edgar.get_submissions(cik="320193")
+
+# 회사 재무 데이터
+facts = edgar.get_company_facts(cik="320193")
+
+# 특정 재무 항목
+revenues = edgar.get_company_concept(
+    cik="320193",
+    taxonomy="us-gaap",
+    tag="Revenues"
+)
+
+# 기간별 집계
+frames = edgar.get_frames(
+    taxonomy="us-gaap",
+    tag="Revenues",
+    unit="USD",
+    year="2023"
+)
+```
+
+### 주요 기능
+- 자동 Rate Limiting (10 requests/second)
+- 자동 페이지네이션 처리
+- Type Hints 지원
+
+---
+
+## 공시 유형 요약
+
+| Form | 이름 | 제출 시기 | 중요도 | 용도 |
+|------|------|----------|--------|------|
+| **8-K** | Current Report | 4일 이내 | ★★★ | 중요 사건 즉시 공시 |
+| **10-K** | Annual Report | 60-90일 | ★★★ | 연간 종합 보고서 |
+| **10-Q** | Quarterly Report | 40-45일 | ★★ | 분기 재무 보고서 |
+| **Form 4** | Insider Trading | 2일 이내 | ★★★ | 내부자 주식 거래 |
+| **13F** | Holdings Report | 45일 | ★★ | 기관 보유 현황 |
+
+---
+
 ## 업데이트 이력
 
+- 2026-02-04: 문서 검증 및 보완
+  - Form 4 (내부자 거래), Form 13F (기관 보유) 추가
+  - Frames API 추가
+  - RSS 피드 옵션 추가
+  - sec-edgar-api 라이브러리 사용법 추가
+  - 공시 유형 요약 테이블 추가
 - 2026-02-04: 초기 문서 작성
   - Submissions, Company Facts, Company Concept API
   - SEC 공시 유형 (8-K, 10-Q, 10-K) 설명

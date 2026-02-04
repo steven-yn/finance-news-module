@@ -23,18 +23,27 @@ URL: https://www.cnbc.com/id/100003114/device/rss/rss.html
 업데이트: 실시간
 ```
 
-#### Crypto News
+#### Finance (검증됨 ✅)
 ```
-URL: https://www.cnbc.com/id/33002080/device/rss/rss.html
-카테고리: 암호화폐
+URL: https://www.cnbc.com/id/10000664/device/rss/rss.html
+카테고리: 월스트리트 투자/금융 뉴스
 업데이트: 실시간
+TTL: 60분
 ```
 
-#### Markets
+#### Economy (검증됨 ✅)
 ```
-URL: https://www.cnbc.com/id/15839135/device/rss/rss.html
-카테고리: 시장 뉴스
+URL: https://www.cnbc.com/id/20910258/device/rss/rss.html
+카테고리: 경제 뉴스 (고용, 무역, 인플레이션)
 업데이트: 실시간
+TTL: 60분
+```
+
+#### Crypto News (비활성 ❌)
+```
+URL: https://www.cnbc.com/id/33002080/device/rss/rss.html
+상태: 404 에러 - 피드 중단됨
+대안: CNBC Finance 피드에서 암호화폐 뉴스 포함
 ```
 
 #### Technology
@@ -48,34 +57,40 @@ URL: https://www.cnbc.com/id/19854910/device/rss/rss.html
 - CNBC RSS 피드는 무료로 제공됩니다
 - 공식 RSS 피드 목록: https://www.cnbc.com/rss-feeds/
 
-### 2. Reuters
+### 2. Reuters (비권장 ⚠️)
 
-#### Business News
-```
-URL: https://www.reutersagency.com/feed/?taxonomy=best-topics&post_type=best
-카테고리: 비즈니스
-업데이트: 실시간
-```
+**상태**: 공식 RSS 피드 비활성화
 
-#### Markets
+과거 URL (현재 작동하지 않음):
 ```
-URL: https://www.reuters.com/markets/
-카테고리: 금융 시장
-업데이트: 실시간
+URL: https://www.reutersagency.com/feed/
+상태: 공식 RSS 피드 중단
 ```
 
-**주의**:
-- Reuters는 공식 RSS 피드를 일부만 제공
-- 필요시 RSS 생성 도구 사용 (rss.app, Newsloth 등)
+**대안**:
+- 서드파티 RSS 생성 도구 (rss.app, Newsloth)
+- Bloomberg 또는 다른 소스 사용 권장
 
-### 3. Bloomberg
+### 3. Bloomberg (검증됨 ✅)
 
 #### Markets News
 ```
 URL: https://feeds.bloomberg.com/markets/news.rss
-카테고리: 시장 뉴스
+카테고리: 글로벌 시장 뉴스
 업데이트: 실시간
+기사 수: 약 30개
 ```
+
+**특징**:
+- 기업 실적, M&A, 주요 인물 인터뷰
+- 지정학적 이슈 포함
+- 고품질 분석 기사
+
+**XML 네임스페이스**:
+- Dublin Core (`dc`)
+- Media RSS (`mrss`)
+- Atom
+- Content
 
 #### Technology
 ```
@@ -84,21 +99,54 @@ URL: https://feeds.bloomberg.com/technology/news.rss
 업데이트: 실시간
 ```
 
-### 4. CoinDesk (암호화폐 전문)
+### 4. CoinDesk (검증됨 ✅)
 
 #### Latest News
 ```
 URL: https://www.coindesk.com/arc/outboundfeeds/rss/
-카테고리: 암호화폐 전체
-업데이트: 실시간
+카테고리: Bitcoin, Ethereum, DeFi, Web3
+업데이트: 1시간 단위
+언어: en-US
 ```
 
-#### Bitcoin
+**특징**:
+- 암호화폐 전문 미디어
+- BTC/ETH 가격 분석
+- DeFi 프로토콜 뉴스
+- 규제 동향
+
+**XML 네임스페이스**:
+- `dc:creator`: 작성자
+- `media:content`: 썸네일 이미지
+- `category`: 토픽 태그
+
+### 5. Cointelegraph (검증됨 ✅)
+
+#### Latest News
 ```
-URL: https://www.coindesk.com/arc/outboundfeeds/rss/?outputType=Bitcoin
-카테고리: 비트코인
-업데이트: 실시간
+URL: https://cointelegraph.com/rss
+카테고리: 블록체인, 핀테크, 암호화폐
+업데이트: 1시간 단위
+언어: English
 ```
+
+**특징**:
+- 블록체인/핀테크 전문
+- 풍부한 메타데이터
+- 기술적 분석
+- 프로젝트 펀딩 뉴스
+
+**XML 네임스페이스**:
+- `dc:creator`: 작성자
+- `media:content`: 이미지 URL 및 메타데이터
+- `enclosure`: 첨부 파일
+- `category`: 다중 태그 지원
+
+**샘플 콘텐츠**:
+- Bitcoin 가격 분석
+- Vitalik Buterin 발언
+- L2 솔루션 뉴스
+- 투자 라운드 소식
 
 ---
 
@@ -291,12 +339,14 @@ class RSSFeedParser:
 if __name__ == "__main__":
     feeds = [
         "https://www.cnbc.com/id/100003114/device/rss/rss.html",  # CNBC Top News
-        "https://www.cnbc.com/id/33002080/device/rss/rss.html",   # CNBC Crypto
+        "https://www.cnbc.com/id/10000664/device/rss/rss.html",   # CNBC Finance
+        "https://www.coindesk.com/arc/outboundfeeds/rss/",        # CoinDesk
+        "https://cointelegraph.com/rss",                          # Cointelegraph
     ]
-    
+
     parser = RSSFeedParser(feeds)
     items = parser.parse_all()
-    
+
     print(f"Total items: {len(items)}")
     for item in items[:5]:
         print(f"\n{item['title']}")
@@ -546,8 +596,30 @@ feedparser는 다음 형식을 모두 지원합니다:
 
 ---
 
+## 검증된 피드 요약
+
+| 소스 | 상태 | 카테고리 | 추천 |
+|------|------|----------|------|
+| CNBC Top News | ✅ 활성 | 주요 뉴스 | ⭐⭐⭐ |
+| CNBC Finance | ✅ 활성 | 금융/암호화폐 | ⭐⭐⭐ |
+| CNBC Economy | ✅ 활성 | 경제 | ⭐⭐ |
+| Bloomberg Markets | ✅ 활성 | 글로벌 시장 | ⭐⭐⭐ |
+| CoinDesk | ✅ 활성 | 암호화폐 | ⭐⭐⭐ |
+| Cointelegraph | ✅ 활성 | 블록체인/핀테크 | ⭐⭐⭐ |
+| CNBC Crypto | ❌ 비활성 | - | - |
+| Reuters | ❌ 비활성 | - | - |
+
+---
+
 ## 업데이트 이력
 
+- 2026-02-04: 피드 검증 및 보완
+  - 각 피드 URL 실제 접속 테스트
+  - CNBC Crypto 피드 404 에러 확인 → 비활성 표시
+  - Reuters 공식 RSS 중단 확인 → 비권장으로 변경
+  - Cointelegraph 피드 추가 (검증됨)
+  - 피드별 XML 네임스페이스 및 필드 상세 정보 추가
+  - 검증된 피드 요약 테이블 추가
 - 2026-02-04: 초기 문서 작성
   - CNBC, Reuters, Bloomberg, CoinDesk 피드 목록
   - feedparser 기본 사용법 및 전체 구현 예제

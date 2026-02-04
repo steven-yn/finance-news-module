@@ -95,7 +95,7 @@ ws.run_forever()
 }
 ```
 
-#### 뉴스 메시지 (추정 형식)
+#### 뉴스 메시지
 ```json
 {
   "type": "news",
@@ -108,13 +108,13 @@ ws.run_forever()
       "url": "https://...",
       "datetime": 1234567890,
       "category": "crypto",
-      "related": ["CRYPTO:BTC"]
+      "related": "CRYPTO:BTC"
     }
   ]
 }
 ```
 
-*주의: 뉴스 메시지의 정확한 형식은 공식 문서에서 확인 필요*
+> **참고**: REST API의 뉴스 응답과 동일한 필드 구조를 사용합니다. `related` 필드는 문자열입니다.
 
 ### 5. 암호화폐 심볼 형식
 
@@ -147,6 +147,8 @@ GET /api/v1/company-news
 - `symbol` (required): 주식 심볼 (예: AAPL, TSLA)
 - `from` (required): 시작 날짜 (YYYY-MM-DD)
 - `to` (required): 종료 날짜 (YYYY-MM-DD)
+- `minId` (optional): 페이지네이션용 - 이 ID 이후의 뉴스만 반환 (증분 업데이트에 유용)
+- `limit` (optional): 최대 반환 개수 제한
 
 #### Python 예제
 ```python
@@ -188,10 +190,15 @@ GET /api/v1/news
   - `forex`: 외환 뉴스
   - `crypto`: 암호화폐 뉴스
   - `merger`: M&A 뉴스
+- `minId` (optional): 페이지네이션용 - 이 ID 이후의 뉴스만 반환
 
 #### Python 예제
 ```python
-crypto_news = finnhub_client.general_news('crypto', min_id=0)
+# 전체 뉴스 가져오기
+crypto_news = finnhub_client.general_news('crypto')
+
+# 증분 업데이트: 마지막으로 받은 ID 이후의 뉴스만 가져오기
+new_news = finnhub_client.general_news('crypto', min_id=last_seen_id)
 ```
 
 #### 응답 형식
@@ -211,19 +218,93 @@ crypto_news = finnhub_client.general_news('crypto', min_id=0)
 ]
 ```
 
+### 3. 뉴스 감성 분석 (News Sentiment)
+
+특정 기업에 대한 뉴스 감성 지표를 반환합니다.
+
+#### 엔드포인트
+```
+GET /api/v1/news-sentiment
+```
+
+#### 파라미터
+- `symbol` (required): 주식 심볼 (예: AAPL)
+
+#### Python 예제
+```python
+sentiment = finnhub_client.news_sentiment('AAPL')
+```
+
+#### 응답 형식
+```json
+{
+  "buzz": {
+    "articlesInLastWeek": 150,
+    "buzzScore": 0.85,
+    "weeklyAverage": 100
+  },
+  "companyNewsScore": 0.65,
+  "sectorAverageBullishPercent": 0.52,
+  "sectorAverageNewsScore": 0.55,
+  "sentiment": {
+    "bearishPercent": 0.25,
+    "bullishPercent": 0.75
+  },
+  "symbol": "AAPL"
+}
+```
+
+### 4. 프레스 릴리스 (Press Releases)
+
+기업의 주요 공시/발표를 가져옵니다.
+
+#### 엔드포인트
+```
+GET /api/v1/press-releases
+```
+
+#### 파라미터
+- `symbol` (required): 주식 심볼 (예: AAPL)
+- `from` (optional): 시작 날짜 (YYYY-MM-DD)
+- `to` (optional): 종료 날짜 (YYYY-MM-DD)
+
+#### Python 예제
+```python
+releases = finnhub_client.press_releases('AAPL', _from="2024-01-01", to="2024-01-31")
+```
+
+#### 응답 형식
+```json
+{
+  "majorDevelopment": [
+    {
+      "datetime": "2024-01-15 10:30:00",
+      "headline": "Apple Announces Q1 Results",
+      "description": "Apple Inc. reports quarterly earnings...",
+      "symbol": "AAPL",
+      "url": "https://..."
+    }
+  ],
+  "symbol": "AAPL"
+}
+```
+
 ---
 
 ## Rate Limits
 
+### 전체 플랜 공통
+- **API 호출**: 30 calls/second (초당 30건)
+- 초과 시 HTTP 429 (Too Many Requests) 응답
+
 ### 무료 플랜 (Free Tier)
-- **API 호출**: 60 calls/minute
-- **WebSocket 연결**: 1 connection
-- **WebSocket 메시지**: Unlimited (단, 연결당 제한 있음)
+- US 주식, Forex, Crypto 실시간 데이터 지원
+- WebSocket 연결 지원
 
 ### 프리미엄 플랜
-- 더 높은 rate limit
-- 여러 WebSocket 연결 지원
-- 실시간 데이터 지연 감소
+- 더 많은 데이터 소스 접근
+- 여러 거래소 지원
+- 추가 기능 (ETF, Bond 등)
 
 *최신 정보는 https://finnhub.io/pricing 참조*
 
@@ -275,8 +356,11 @@ def connect_with_retry(url):
 
 ### 1. Ping/Pong 처리
 - 서버가 주기적으로 `{"type":"ping"}` 전송
-- 클라이언트는 연결 유지를 위해 응답 필요 (자동 처리됨)
-- WebSocket 라이브러리가 자동으로 처리하지만, 커스텀 핸들러 구현 가능
+- 클라이언트는 연결 유지를 위해 응답 필요 (대부분 라이브러리가 자동 처리)
+- **주의**: ping만 계속 수신되고 데이터가 없는 경우:
+  - 시장이 닫혀있거나
+  - 해당 심볼에 거래가 없는 상태
+  - [관련 GitHub 이슈](https://github.com/finnhubio/Finnhub-API/issues/35) 참조
 
 ### 2. 심볼 형식 확인
 - 암호화폐: `CRYPTO:BTC` 또는 `BINANCE:BTCUSDT`
@@ -398,6 +482,13 @@ if __name__ == "__main__":
 
 ## 업데이트 이력
 
+- 2026-02-04: 문서 검토 및 보완
+  - Rate Limits 수정 (30 calls/second)
+  - Company News/Market News 파라미터 추가 (minId, limit)
+  - News Sentiment API 추가
+  - Press Releases API 추가
+  - Ping 메시지 관련 주의사항 보완
+  - WebSocket News 메시지 형식 명확화
 - 2026-02-04: 초기 문서 작성
   - WebSocket API 연결 및 구독 방법
   - REST API 엔드포인트
