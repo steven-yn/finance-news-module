@@ -36,6 +36,23 @@ class Settings(BaseSettings):
     rss_poll_interval: float = Field(default=120.0, description="RSS 폴링 간격 (초)")
 
     # SEC Settings
+    sec_user_agent: str = Field(
+        default="FinanceNews/1.0 admin@example.com",
+        description="SEC API User-Agent (이메일 포함 필수)",
+    )
+    sec_ciks: list[str] = Field(
+        default=[
+            "0000320193",  # Apple
+            "0001018724",  # Amazon
+            "0001652044",  # Google
+            "0001318605",  # Tesla
+        ],
+        description="모니터링할 회사 CIK 목록",
+    )
+    sec_form_types: list[str] = Field(
+        default=["8-K", "10-K", "10-Q"],
+        description="모니터링할 SEC 공시 유형",
+    )
     sec_poll_interval: float = Field(default=60.0, description="SEC 폴링 간격 (초)")
 
     # FRED Settings
