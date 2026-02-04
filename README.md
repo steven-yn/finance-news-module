@@ -55,9 +55,24 @@ python -m finance_news.main
 ## 개발 상태
 
 - [x] Phase 1: 핵심 아키텍처 구축
-- [ ] Phase 2-5: API 문서화
-- [ ] Phase 6-9: 소스 구현
+- [x] Phase 2: API 문서화 - Finnhub
+- [x] Phase 3: API 문서화 - RSS 피드
+- [x] Phase 4: API 문서화 - SEC EDGAR
+- [x] Phase 5: API 문서화 - FRED
+- [x] Phase 6: Finnhub WebSocket 뉴스 소스 구현
+- [x] Phase 7: RSS 피드 뉴스 소스 구현
+- [x] Phase 8: SEC EDGAR 공시 소스 구현
+- [x] Phase 9: FRED 경제 지표 소스 구현
 - [ ] Phase 10: 필터링 및 통합
+
+### 구현된 소스
+
+| 소스 | 유형 | 상태 | 파일 |
+|------|------|------|------|
+| **Finnhub** | WebSocket | ✅ | `src/finance_news/sources/finnhub.py` |
+| **RSS** | Polling | ✅ | `src/finance_news/sources/rss.py` |
+| **SEC EDGAR** | Polling | ✅ | `src/finance_news/sources/sec.py` |
+| **FRED** | Polling | ✅ | `src/finance_news/sources/fred.py` |
 
 ## 의존성
 
