@@ -11,7 +11,7 @@
 import asyncio
 import hashlib
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fredapi import Fred
@@ -121,7 +121,7 @@ class FREDSource(PollingNewsSource):
 
         try:
             # 최근 3개월 데이터 (최신 값 + 이전 값)
-            end_date = datetime.now()
+            end_date = datetime.now(timezone.utc)
             start_date = end_date - timedelta(days=90)
 
             # fredapi는 동기 API이므로 실행자로 실행
@@ -248,7 +248,9 @@ class FREDSource(PollingNewsSource):
             url=url,
             source=self.name,
             category=category,
-            published_at=datetime.combine(indicator_data["date"], datetime.min.time()),
+            published_at=datetime.combine(
+                indicator_data["date"], datetime.min.time(), tzinfo=timezone.utc
+            ),
             symbols=[],  # 경제 지표는 특정 심볼이 없음
             raw=indicator_data,
         )

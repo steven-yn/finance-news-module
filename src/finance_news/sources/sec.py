@@ -14,7 +14,8 @@ SEC EDGAR (Electronic Data Gathering, Analysis, and Retrieval)에서
 import asyncio
 import hashlib
 import logging
-from datetime import datetime
+from collections import deque
+from datetime import datetime, timezone
 from typing import Optional
 
 import aiohttp
@@ -32,7 +33,8 @@ class SECSource(PollingNewsSource):
     """
 
     BASE_URL = "https://data.sec.gov"
-    MIN_DELAY = 0.12  # Rate limit: 초당 8.3 요청 (10 요청 제한)
+    MAX_REQUESTS_PER_SECOND = 10  # SEC rate limit
+    RATE_LIMIT_WINDOW = 1.0  # 1초 윈도우
 
     def __init__(
         self,
@@ -54,7 +56,7 @@ class SECSource(PollingNewsSource):
         self.form_types = form_types or ["8-K", "10-K", "10-Q", "4"]
         self.headers = {"User-Agent": user_agent}
         self._session: Optional[aiohttp.ClientSession] = None
-        self._last_request_time = 0.0
+        self._request_times: deque[float] = deque(maxlen=self.MAX_REQUESTS_PER_SECOND)
         self._cik_cache: dict[str, str] = {}  # CIK -> 회사명 캐시
 
     @property
@@ -78,14 +80,21 @@ class SECSource(PollingNewsSource):
         await super().disconnect()
 
     async def _rate_limit(self) -> None:
-        """Rate limit 준수 (초당 최대 10 요청)"""
-        current_time = asyncio.get_event_loop().time()
-        elapsed = current_time - self._last_request_time
+        """Rate limit 준수 (슬라이딩 윈도우 방식, 초당 최대 10 요청)"""
+        loop = asyncio.get_event_loop()
+        now = loop.time()
 
-        if elapsed < self.MIN_DELAY:
-            await asyncio.sleep(self.MIN_DELAY - elapsed)
+        # 윈도우 내 요청 수가 최대치에 도달한 경우 대기
+        if len(self._request_times) >= self.MAX_REQUESTS_PER_SECOND:
+            oldest = self._request_times[0]
+            time_since_oldest = now - oldest
 
-        self._last_request_time = asyncio.get_event_loop().time()
+            if time_since_oldest < self.RATE_LIMIT_WINDOW:
+                wait_time = self.RATE_LIMIT_WINDOW - time_since_oldest
+                logger.debug(f"[{self.name}] Rate limit 대기: {wait_time:.3f}초")
+                await asyncio.sleep(wait_time)
+
+        self._request_times.append(loop.time())
 
     async def _get_company_name(self, cik: str) -> str:
         """CIK로 회사명 가져오기 (캐시 사용)"""
@@ -104,11 +113,16 @@ class SECSource(PollingNewsSource):
                     self._cik_cache[cik] = company_name
                     return company_name
                 else:
-                    logger.warning(f"[{self.name}] CIK {cik} 회사명 조회 실패: {response.status}")
+                    logger.warning(
+                        f"[{self.name}] CIK {cik} 회사명 조회 실패: HTTP {response.status}"
+                    )
                     return f"CIK-{cik}"
 
-        except Exception as e:
-            logger.error(f"[{self.name}] CIK {cik} 회사명 조회 에러: {e}")
+        except asyncio.TimeoutError:
+            logger.warning(f"[{self.name}] CIK {cik} 회사명 조회 타임아웃")
+            return f"CIK-{cik}"
+        except aiohttp.ClientError as e:
+            logger.error(f"[{self.name}] CIK {cik} 네트워크 에러: {e}")
             return f"CIK-{cik}"
 
     async def _get_recent_filings(self, cik: str, limit: int = 5) -> list[dict]:
@@ -164,10 +178,13 @@ class SECSource(PollingNewsSource):
                 return filings
 
         except asyncio.TimeoutError:
-            logger.error(f"[{self.name}] CIK {cik} 공시 조회 타임아웃")
+            logger.warning(f"[{self.name}] CIK {cik} 공시 조회 타임아웃")
             return []
-        except Exception as e:
-            logger.error(f"[{self.name}] CIK {cik} 공시 조회 에러: {e}")
+        except aiohttp.ClientError as e:
+            logger.error(f"[{self.name}] CIK {cik} 네트워크 에러: {e}")
+            return []
+        except (KeyError, IndexError) as e:
+            logger.error(f"[{self.name}] CIK {cik} 데이터 파싱 에러: {e}")
             return []
 
     def _filing_to_news_item(self, filing: dict) -> NewsItem:
@@ -208,7 +225,9 @@ class SECSource(PollingNewsSource):
             )
         except Exception:
             # fallback: filingDate 사용
-            published_at = datetime.strptime(filing["filingDate"], "%Y-%m-%d")
+            published_at = datetime.strptime(filing["filingDate"], "%Y-%m-%d").replace(
+                tzinfo=timezone.utc
+            )
 
         # 심볼 추출
         symbols = []

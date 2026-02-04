@@ -150,7 +150,7 @@ def create_sources(settings: Settings) -> list[NewsSource]:
     if settings.rss_feeds:
         sources.append(
             RSSSource(
-                feeds=settings.rss_feeds,
+                feed_urls=settings.rss_feeds,
                 interval=settings.rss_poll_interval,
             )
         )

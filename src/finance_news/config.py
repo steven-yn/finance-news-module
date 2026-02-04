@@ -1,6 +1,8 @@
 """설정 관리 (pydantic-settings 기반)"""
 
-from pydantic import Field
+from typing import Optional
+
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,10 +16,43 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # API Keys
-    finnhub_api_key: str = Field(..., description="Finnhub API 키")
-    fred_api_key: str = Field(..., description="FRED API 키")
+    # API Keys (선택적 - 최소 하나 이상 필요)
+    finnhub_api_key: Optional[str] = Field(default=None, description="Finnhub API 키")
+    fred_api_key: Optional[str] = Field(default=None, description="FRED API 키")
     discord_webhook_url: str = Field(..., description="Discord Webhook URL")
+
+    @field_validator("discord_webhook_url")
+    @classmethod
+    def validate_discord_webhook(cls, v: str) -> str:
+        """Discord Webhook URL 검증"""
+        if not v or not v.strip():
+            raise ValueError("Discord Webhook URL은 필수입니다")
+        if not v.startswith("https://discord.com/api/webhooks/"):
+            raise ValueError("유효한 Discord Webhook URL이 아닙니다")
+        return v.strip()
+
+    @field_validator("finnhub_api_key", "fred_api_key", mode="before")
+    @classmethod
+    def empty_str_to_none(cls, v: Optional[str]) -> Optional[str]:
+        """빈 문자열을 None으로 변환"""
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        return v.strip() if isinstance(v, str) else v
+
+    @model_validator(mode="after")
+    def validate_at_least_one_source(self) -> "Settings":
+        """최소 하나 이상의 뉴스 소스가 활성화되어야 함"""
+        has_finnhub = bool(self.finnhub_api_key)
+        has_fred = bool(self.fred_api_key)
+        has_rss = bool(self.rss_feeds)
+        has_sec = bool(self.sec_ciks)
+
+        if not any([has_finnhub, has_fred, has_rss, has_sec]):
+            raise ValueError(
+                "최소 하나 이상의 뉴스 소스가 필요합니다. "
+                "finnhub_api_key, fred_api_key, rss_feeds, sec_ciks 중 하나 이상 설정하세요."
+            )
+        return self
 
     # Finnhub Settings
     finnhub_symbols: list[str] = Field(
