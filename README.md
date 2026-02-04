@@ -6,6 +6,11 @@
 
 미국 증시 및 암호화폐 관련 뉴스를 실시간으로 수집하고 Discord로 알림을 발송합니다.
 
+### 실행 방법
+
+source .venv/bin/activate
+python -m finance_news.main
+
 ### 주요 기능
 
 - **실시간 뉴스 수집**: WebSocket 기반 실시간 뉴스 스트림
