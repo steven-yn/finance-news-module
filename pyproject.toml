@@ -1,0 +1,48 @@
+[project]
+name = "finance-news"
+version = "0.1.0"
+description = "실시간 금융 뉴스 수집 및 Discord 알림 시스템"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "qfin @ file:///Users/sung-yeon/projects/finance-toy",
+    "finnhub-python>=2.4.0",
+    "feedparser>=6.0.0",
+    "fredapi>=0.5.0",
+    "aiohttp>=3.9.0",
+    "websockets>=12.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "pyyaml>=6.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["finance_news"]
+package-dir = {"" = "src"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --cov=finance_news --cov-report=term-missing"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E", "F", "I", "N", "W", "UP"]
