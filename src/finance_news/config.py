@@ -58,21 +58,31 @@ class Settings(BaseSettings):
             )
         return self
 
-    # Finnhub Settings
-    finnhub_symbols: list[str] = Field(
-        default=["CRYPTO:BTC", "CRYPTO:ETH", "CRYPTO:SOL", "CRYPTO:XRP"],
-        description="구독할 암호화폐 심볼",
+    # Finnhub Settings (REST API Polling)
+    finnhub_categories: list[str] = Field(
+        default=["general", "crypto"],
+        description="뉴스 카테고리 (general, crypto, forex, merger)",
     )
+    finnhub_poll_interval: float = Field(default=60.0, description="Finnhub 폴링 간격 (초)")
 
     # RSS Settings
     rss_feeds: list[str] = Field(
         default=[
+            # 주요 금융 언론
+            "https://feeds.bloomberg.com/markets/news.rss",  # Bloomberg Markets
             "https://www.cnbc.com/id/100003114/device/rss/rss.html",  # CNBC Top News
-            "https://www.cnbc.com/id/33002080/device/rss/rss.html",  # CNBC Crypto
+            "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",  # Wall Street Journal Markets
+            "https://www.ft.com/rss/home/uk",  # Financial Times
+            "https://ir.thomsonreuters.com/rss/news-releases.xml?items=15",  # Thomson Reuters News
+            # 암호화폐 전문
+            "https://cointelegraph.com/rss",  # Cointelegraph Crypto
+            # 추가 금융 뉴스
+            "https://www.investing.com/rss/news.rss",  # Investing.com
+            "https://seekingalpha.com/feed.xml",  # Seeking Alpha
         ],
         description="RSS 피드 URL 목록",
     )
-    rss_poll_interval: float = Field(default=120.0, description="RSS 폴링 간격 (초)")
+    rss_poll_interval: float = Field(default=60.0, description="RSS 폴링 간격 (초)")
 
     # SEC Settings
     sec_user_agent: str = Field(
@@ -105,6 +115,14 @@ class Settings(BaseSettings):
     keyword_filters: list[str] = Field(
         default=["bitcoin", "crypto", "ethereum", "blockchain", "btc", "eth"],
         description="뉴스 필터링 키워드",
+    )
+    dedup_cache_file: str = Field(
+        default=".cache/news_dedup.json",
+        description="중복 제거 캐시 파일 경로",
+    )
+    dedup_save_interval: int = Field(
+        default=10,
+        description="캐시 저장 간격 (N개 뉴스마다 저장)",
     )
 
     # Logging
