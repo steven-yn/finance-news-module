@@ -729,8 +729,23 @@ frames = edgar.get_frames(
 
 ---
 
+## 구현 상태
+
+✅ **Phase 8 완료** (2026-02-04)
+- `SECSource` 클래스 구현 (`src/finance_news/sources/sec.py`)
+- PollingNewsSource 상속, Rate Limiting 적용
+- 주요 공시 유형 지원: 8-K, 10-K, 10-Q, Form 4
+- 단위 테스트 및 통합 테스트 완료
+
+---
+
 ## 업데이트 이력
 
+- 2026-02-04: **Phase 8 - SEC EDGAR 소스 구현 완료**
+  - SECSource 클래스 구현 및 테스트
+  - CIK 기반 회사별 모니터링
+  - Rate limiting (초당 최대 10 요청)
+  - 자동 중복 제거
 - 2026-02-04: 문서 검증 및 보완
   - Form 4 (내부자 거래), Form 13F (기관 보유) 추가
   - Frames API 추가
