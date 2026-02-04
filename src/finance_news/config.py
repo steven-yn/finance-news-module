@@ -27,7 +27,11 @@ class Settings(BaseSettings):
         """Discord Webhook URL 검증"""
         if not v or not v.strip():
             raise ValueError("Discord Webhook URL은 필수입니다")
-        if not v.startswith("https://discord.com/api/webhooks/"):
+        valid_prefixes = (
+            "https://discord.com/api/webhooks/",
+            "https://discordapp.com/api/webhooks/",
+        )
+        if not v.startswith(valid_prefixes):
             raise ValueError("유효한 Discord Webhook URL이 아닙니다")
         return v.strip()
 
