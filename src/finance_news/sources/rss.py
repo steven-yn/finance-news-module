@@ -218,11 +218,19 @@ class RSSSource(PollingNewsSource):
         Returns:
             발행 날짜 (UTC, 파싱 실패 시 현재 시간)
         """
+        # published_parsed 또는 updated_parsed 시도
+        parsed_date = None
         if hasattr(entry, "published_parsed") and entry.published_parsed:
+            parsed_date = entry.published_parsed
+        elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
+            parsed_date = entry.updated_parsed
+
+        if parsed_date:
             try:
-                return datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
-            except (TypeError, ValueError) as e:
-                logger.debug(f"날짜 파싱 실패: {e}")
+                # struct_time을 datetime으로 변환
+                return datetime(*parsed_date[:6], tzinfo=timezone.utc)
+            except (TypeError, ValueError, AttributeError) as e:
+                logger.debug(f"[{self.name}] 날짜 파싱 실패: {e}")
 
         return datetime.now(timezone.utc)
 

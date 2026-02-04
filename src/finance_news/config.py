@@ -44,8 +44,8 @@ class Settings(BaseSettings):
         """최소 하나 이상의 뉴스 소스가 활성화되어야 함"""
         has_finnhub = bool(self.finnhub_api_key)
         has_fred = bool(self.fred_api_key)
-        has_rss = bool(self.rss_feeds)
-        has_sec = bool(self.sec_ciks)
+        has_rss = len(self.rss_feeds) > 0
+        has_sec = len(self.sec_ciks) > 0
 
         if not any([has_finnhub, has_fred, has_rss, has_sec]):
             raise ValueError(
