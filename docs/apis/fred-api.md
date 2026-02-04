@@ -271,6 +271,95 @@ print(f"Next release: {next_release}")
 
 ---
 
+## 주요 릴리스 ID
+
+| Release ID | 릴리스 이름 | 주요 지표 |
+|------------|------------|----------|
+| **175** | Employment Situation | UNRATE, PAYEMS (고용 지표) |
+| **10** | Consumer Price Index | CPIAUCSL, CPILFESL (물가 지표) |
+| **53** | Gross Domestic Product | GDP, GDPC1 (경제 성장) |
+| **19** | H.15 Selected Interest Rates | DFF, FEDFUNDS (금리) |
+| **18** | H.6 Money Stock Measures | M2SL (통화량) |
+| **21** | H.4.1 Federal Reserve Balance Sheet | WALCL (연준 자산) |
+
+---
+
+## 경제 캘린더 API (REST)
+
+### fred/releases/dates - 모든 릴리스 일정
+
+```
+GET https://api.stlouisfed.org/fred/releases/dates
+    ?api_key={API_KEY}
+    &file_type=json
+    &include_release_dates_with_no_data=true
+```
+
+#### 파라미터
+| 파라미터 | 기본값 | 설명 |
+|---------|--------|------|
+| `realtime_start` | 올해 1월 1일 | 시작 날짜 |
+| `realtime_end` | 9999-12-31 | 종료 날짜 |
+| `limit` | 1000 | 최대 개수 (1-1000) |
+| `order_by` | release_date | 정렬 기준 |
+| `include_release_dates_with_no_data` | false | 미래 일정 포함 여부 |
+
+#### Python 예제
+```python
+import requests
+
+def get_upcoming_releases(api_key: str, days: int = 7) -> list:
+    """다가오는 경제 지표 발표 일정"""
+    from datetime import datetime, timedelta
+
+    url = "https://api.stlouisfed.org/fred/releases/dates"
+    params = {
+        'api_key': api_key,
+        'file_type': 'json',
+        'realtime_start': datetime.now().strftime('%Y-%m-%d'),
+        'realtime_end': (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d'),
+        'include_release_dates_with_no_data': 'true',
+        'limit': 100
+    }
+
+    response = requests.get(url, params=params)
+    response.raise_for_status()
+
+    data = response.json()
+    return data.get('release_dates', [])
+
+# 사용 예제
+releases = get_upcoming_releases('your_api_key', days=14)
+for release in releases:
+    print(f"{release['date']}: {release['release_name']}")
+```
+
+> **참고**: 릴리스 일정은 데이터 소스에서 발표한 예정일이며, 실제 FRED 웹사이트에 데이터가 올라오는 시점과 다를 수 있습니다.
+
+---
+
+## 데이터 변환 (Units)
+
+`units` 파라미터로 데이터를 변환할 수 있습니다:
+
+| units | 설명 | 수식 |
+|-------|------|------|
+| `lin` | 원본 값 (기본값) | Xt |
+| `chg` | 전기 대비 변화 | Xt - Xt-1 |
+| `ch1` | 전년 동기 대비 변화 | Xt - Xt-n |
+| `pch` | 전기 대비 변화율 (%) | ((Xt - Xt-1) / Xt-1) × 100 |
+| `pc1` | 전년 동기 대비 변화율 (%) | ((Xt - Xt-n) / Xt-n) × 100 |
+| `pca` | 연율화 변화율 (%) | 복리 연율화 |
+| `cch` | 복리 변화 | 연속 복리 |
+| `log` | 자연로그 | ln(Xt) |
+
+```python
+# 전년 동기 대비 CPI 변화율 (인플레이션)
+cpi_inflation = fred.get_series('CPIAUCSL', units='pc1')
+```
+
+---
+
 ## 전체 구현 예제
 
 ### 경제 지표 모니터링 클래스
@@ -597,8 +686,26 @@ except Exception as e:
 
 ---
 
+## API 엔드포인트 요약
+
+| 엔드포인트 | 용도 |
+|-----------|------|
+| `fred/series/observations` | 시계열 데이터 조회 |
+| `fred/series` | 시계열 메타데이터 |
+| `fred/series/search` | 키워드 검색 |
+| `fred/releases/dates` | 모든 릴리스 일정 |
+| `fred/release/dates` | 특정 릴리스 일정 |
+| `fred/release/series` | 릴리스에 포함된 시계열 |
+
+---
+
 ## 업데이트 이력
 
+- 2026-02-04: 문서 검증 및 보완
+  - 주요 릴리스 ID 테이블 추가
+  - 경제 캘린더 API (fred/releases/dates) 추가
+  - 데이터 변환 units 파라미터 상세 설명 추가
+  - API 엔드포인트 요약 테이블 추가
 - 2026-02-04: 초기 문서 작성
   - 주요 경제 지표 (DFF, CPIAUCSL, UNRATE, GDP 등)
   - fredapi 라이브러리 사용법
