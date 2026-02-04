@@ -32,36 +32,26 @@ async def test_sec_connection():
 
     User-Agent가 필요합니다. 환경변수 SEC_USER_AGENT 설정 필요.
     예: "FinanceNews/1.0 admin@example.com"
+
+    참고: 개별 기업 공시 수집 기능은 제거되었습니다.
     """
     user_agent = os.getenv("SEC_USER_AGENT", "FinanceNews/1.0 test@example.com")
 
     print(f"🔑 User-Agent: {user_agent}")
     print()
 
-    # 주요 테크 기업 CIK
-    companies = {
-        "0000320193": "Apple Inc.",
-        "0001018724": "Amazon.com Inc.",
-        "0001652044": "Alphabet Inc. (Google)",
-        "0001318605": "Tesla Inc.",
-    }
-
-    ciks = list(companies.keys())
     form_types = ["8-K", "10-K", "10-Q"]  # 주요 공시 유형만
 
     source = SECSource(
         user_agent=user_agent,
-        ciks=ciks,
         form_types=form_types,
         interval=60.0,  # 60초 폴링
     )
 
     print(f"✅ SECSource 생성: {source.name}")
-    print(f"📊 모니터링 회사: {len(ciks)}개")
-    for cik, name in companies.items():
-        print(f"   - {name} (CIK: {cik})")
     print(f"📋 공시 유형: {', '.join(form_types)}")
     print(f"⏱️  폴링 간격: {source.interval}초")
+    print(f"ℹ️  개별 기업 공시 수집: 비활성화됨")
     print()
 
     # 연결
@@ -90,17 +80,16 @@ async def test_sec_connection():
 
 
 async def test_sec_single_company():
-    """단일 회사 공시 테스트 (Apple)"""
+    """개별 기업 공시 테스트 (비활성화됨)"""
     user_agent = os.getenv("SEC_USER_AGENT", "FinanceNews/1.0 test@example.com")
 
     print("=" * 60)
-    print("단일 회사 공시 테스트: Apple Inc.")
+    print("개별 기업 공시 테스트 (비활성화)")
     print("=" * 60)
     print()
 
     source = SECSource(
         user_agent=user_agent,
-        ciks=["0000320193"],  # Apple만
         form_types=["8-K"],  # 8-K (중요 사건) 만
         interval=60.0,
     )
@@ -109,7 +98,7 @@ async def test_sec_single_company():
     print("🔌 연결 시작...")
     print()
 
-    # 5개만 수집
+    # 빈 리스트 반환 확인
     count = 0
     async for item in source.stream():
         count += 1
@@ -121,7 +110,7 @@ async def test_sec_single_company():
             break
 
     await source.disconnect()
-    print(f"✅ {count}개 공시 수신 완료")
+    print(f"ℹ️  개별 기업 공시 수집 비활성화: {count}개 수신 (0개 예상)")
 
 
 if __name__ == "__main__":

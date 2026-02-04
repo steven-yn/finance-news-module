@@ -40,7 +40,11 @@ def news_item_to_alert(item) -> Alert:
 
 
 async def main():
-    """메인 실행"""
+    """메인 실행
+
+    참고: 개별 기업 공시 수집 기능은 제거되었습니다.
+    이 테스트는 빈 결과를 반환합니다.
+    """
     # 환경변수 확인
     user_agent = os.getenv("SEC_USER_AGENT")
     webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
@@ -56,22 +60,13 @@ async def main():
         return
 
     print("=" * 60)
-    print("SEC EDGAR → Discord 통합 테스트")
+    print("SEC EDGAR → Discord 통합 테스트 (비활성화)")
     print("=" * 60)
     print()
-
-    # 주요 테크 기업
-    companies = {
-        "0000320193": "Apple Inc.",
-        "0001018724": "Amazon.com Inc.",
-        "0001652044": "Alphabet Inc. (Google)",
-        "0001318605": "Tesla Inc.",
-    }
 
     # SEC 소스 생성
     sec_source = SECSource(
         user_agent=user_agent,
-        ciks=list(companies.keys()),
         form_types=["8-K"],  # 8-K (중요 사건) 공시만
         interval=60.0,
     )
@@ -80,10 +75,8 @@ async def main():
     notifier = DiscordNotifier(webhook_url=webhook_url)
 
     print("✅ SEC 소스 생성 완료")
-    print(f"   - 모니터링 회사: {len(companies)}개")
-    for cik, name in companies.items():
-        print(f"     • {name} (CIK: {cik})")
     print(f"   - 공시 유형: 8-K")
+    print(f"   - 개별 기업 공시 수집: 비활성화됨")
     print()
 
     print("✅ Discord 알림기 생성 완료")
