@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from html.parser import HTMLParser
 from typing import Optional
 
@@ -141,8 +141,14 @@ class RSSSource(PollingNewsSource):
             logger.debug(f"[{self.name}] {len(items)}개 아이템 파싱 완료 ({feed_url})")
             return items
 
+        except asyncio.TimeoutError:
+            logger.warning(f"[{self.name}] 피드 타임아웃 ({feed_url})")
+            return []
+        except aiohttp.ClientError as e:
+            logger.error(f"[{self.name}] 피드 네트워크 에러 ({feed_url}): {e}")
+            return []
         except Exception as e:
-            logger.error(f"[{self.name}] 피드 가져오기 실패 ({feed_url}): {e}")
+            logger.error(f"[{self.name}] 피드 처리 실패 ({feed_url}): {e}")
             return []
 
     async def _fetch_feed_content(self, feed_url: str) -> str:
@@ -210,15 +216,23 @@ class RSSSource(PollingNewsSource):
             entry: feedparser entry 객체
 
         Returns:
-            발행 날짜 (파싱 실패 시 현재 시간)
+            발행 날짜 (UTC, 파싱 실패 시 현재 시간)
         """
+        # published_parsed 또는 updated_parsed 시도
+        parsed_date = None
         if hasattr(entry, "published_parsed") and entry.published_parsed:
-            try:
-                return datetime(*entry.published_parsed[:6])
-            except (TypeError, ValueError) as e:
-                logger.debug(f"날짜 파싱 실패: {e}")
+            parsed_date = entry.published_parsed
+        elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
+            parsed_date = entry.updated_parsed
 
-        return datetime.utcnow()
+        if parsed_date:
+            try:
+                # struct_time을 datetime으로 변환
+                return datetime(*parsed_date[:6], tzinfo=timezone.utc)
+            except (TypeError, ValueError, AttributeError) as e:
+                logger.debug(f"[{self.name}] 날짜 파싱 실패: {e}")
+
+        return datetime.now(timezone.utc)
 
     def _extract_summary(self, entry) -> Optional[str]:
         """요약 추출 및 HTML 태그 제거
