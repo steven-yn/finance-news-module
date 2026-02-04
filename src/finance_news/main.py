@@ -17,13 +17,14 @@ import signal
 import sys
 from typing import Optional
 
-from qfin.core.notifier import Notifier
-from qfin.notifiers.discord import DiscordNotifier
+from finance_notifier import DiscordNotifier
+from finance_notifier.adapters.finance_news import news_item_to_message
+from finance_notifier.core.notifier import Notifier
 
 from .config import Settings, load_settings
 from .core.filter import CompositeFilter, NewsFilter, PassAllFilter
 from .core.source import NewsSource
-from .core.types import NewsAlert, NewsItem
+from .core.types import NewsItem
 from .filters import DeduplicationFilter, KeywordFilter
 from .sources import FinnhubSource, FREDSource, RSSSource, SECSource
 
@@ -103,9 +104,9 @@ class NewsOrchestrator:
                     break
 
                 if self.filter.should_pass(item):
-                    alert = self._to_alert(item)
+                    message = news_item_to_message(item)
                     try:
-                        await self.notifier.send(alert)
+                        await self.notifier.send(message)
                         logger.info(f"[{source.name}] 알림 발송: {item.headline[:60]}...")
                     except Exception as e:
                         logger.error(f"[{source.name}] 알림 발송 실패: {e}")
@@ -115,22 +116,6 @@ class NewsOrchestrator:
             logger.info(f"[{source.name}] 태스크 취소됨")
         except Exception as e:
             logger.error(f"[{source.name}] 처리 에러: {e}", exc_info=True)
-
-    def _to_alert(self, item: NewsItem) -> NewsAlert:
-        """NewsItem → NewsAlert 변환"""
-        return NewsAlert(
-            symbol=item.symbols[0] if item.symbols else "MARKET",
-            alert_type=f"NEWS_{item.category.value.upper()}",
-            message=item.summary or item.headline,
-            current_value=0.0,
-            change_percent=0.0,
-            timestamp=item.published_at,
-            headline=item.headline,
-            source=item.source,
-            url=item.url,
-            news_category=item.category.value,
-        )
-
 
 def create_sources(settings: Settings) -> list[NewsSource]:
     """설정 기반으로 소스 생성"""

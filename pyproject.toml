@@ -5,7 +5,8 @@ description = "실시간 금융 뉴스 수집 및 Discord 알림 시스템"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "qfin @ file:///Users/sung-yeon/projects/finance-toy",
+    "qfin @ file:///Users/sung-yeon/projects/finance-crypto-observer",
+    "finance-notifier @ file:///Users/sung-yeon/projects/finance-notifier",
     "finnhub-python>=2.4.0",
     "feedparser>=6.0.0",
     "fredapi>=0.5.0",
