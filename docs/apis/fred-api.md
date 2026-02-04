@@ -699,8 +699,25 @@ except Exception as e:
 
 ---
 
+## 구현 상태
+
+✅ **Phase 9 완료** (2026-02-04)
+- `FREDSource` 클래스 구현 (`src/finance_news/sources/fred.py`)
+- PollingNewsSource 상속, 변화 감지 방식
+- 주요 지표 지원: DFF, CPIAUCSL, UNRATE, GDP, M2SL, VIXCLS, T10Y2Y
+- fredapi 동기 라이브러리를 비동기로 래핑
+- 중요도 기반 카테고리 분류
+- 단위 테스트 및 통합 테스트 완료
+
+---
+
 ## 업데이트 이력
 
+- 2026-02-04: **Phase 9 - FRED 소스 구현 완료**
+  - FREDSource 클래스 구현 및 테스트
+  - 변화 감지 기반 알림 (임계값 0.1%)
+  - 7개 주요 경제 지표 모니터링
+  - 동기 API의 비동기 래핑
 - 2026-02-04: 문서 검증 및 보완
   - 주요 릴리스 ID 테이블 추가
   - 경제 캘린더 API (fred/releases/dates) 추가
