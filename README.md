@@ -63,7 +63,7 @@ python -m finance_news.main
 - [x] Phase 7: RSS 피드 뉴스 소스 구현
 - [x] Phase 8: SEC EDGAR 공시 소스 구현
 - [x] Phase 9: FRED 경제 지표 소스 구현
-- [ ] Phase 10: 필터링 및 통합
+- [x] Phase 10: 필터링 및 통합 ✅ **완료!**
 
 ### 구현된 소스
 
@@ -73,6 +73,15 @@ python -m finance_news.main
 | **RSS** | Polling | ✅ | `src/finance_news/sources/rss.py` |
 | **SEC EDGAR** | Polling | ✅ | `src/finance_news/sources/sec.py` |
 | **FRED** | Polling | ✅ | `src/finance_news/sources/fred.py` |
+
+### 구현된 필터
+
+| 필터 | 용도 | 파일 |
+|------|------|------|
+| **KeywordFilter** | 키워드 기반 필터링 (암호화폐/시장 프리셋) | `src/finance_news/filters/keyword.py` |
+| **DeduplicationFilter** | 해시 기반 중복 제거 | `src/finance_news/filters/dedup.py` |
+| **CategoryFilter** | 카테고리 기반 필터링 | `src/finance_news/filters/keyword.py` |
+| **SourceFilter** | 소스 기반 필터링 | `src/finance_news/filters/keyword.py` |
 
 ## 의존성
 
