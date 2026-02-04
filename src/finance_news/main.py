@@ -117,6 +117,7 @@ class NewsOrchestrator:
         except Exception as e:
             logger.error(f"[{source.name}] 처리 에러: {e}", exc_info=True)
 
+
 def create_sources(settings: Settings) -> list[NewsSource]:
     """설정 기반으로 소스 생성"""
     sources: list[NewsSource] = []
@@ -141,17 +142,17 @@ def create_sources(settings: Settings) -> list[NewsSource]:
         )
         logger.info(f"RSS 소스 추가: {len(settings.rss_feeds)}개 피드")
 
-    # SEC EDGAR (Polling)
-    if settings.sec_ciks:
-        sources.append(
-            SECSource(
-                user_agent=settings.sec_user_agent,
-                ciks=settings.sec_ciks,
-                form_types=settings.sec_form_types,
-                interval=settings.sec_poll_interval,
-            )
-        )
-        logger.info(f"SEC 소스 추가: {len(settings.sec_ciks)}개 회사")
+    # SEC EDGAR (Polling) - 개별 기업 공시 수집 비활성화
+    # SEC 소스는 현재 비활성화 상태 (개별 기업 공시 제거됨)
+    # if settings.sec_user_agent:
+    #     sources.append(
+    #         SECSource(
+    #             user_agent=settings.sec_user_agent,
+    #             form_types=settings.sec_form_types,
+    #             interval=settings.sec_poll_interval,
+    #         )
+    #     )
+    #     logger.info("SEC 소스 추가 (개별 기업 공시 비활성화)")
 
     # FRED (Polling)
     if settings.fred_api_key:
