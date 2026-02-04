@@ -160,7 +160,12 @@ class RSSSource(PollingNewsSource):
         Returns:
             RSS XML 문자열
         """
-        async with aiohttp.ClientSession() as session:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/rss+xml, application/xml, text/xml, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        async with aiohttp.ClientSession(headers=headers) as session:
             async with session.get(feed_url, timeout=self.timeout) as response:
                 response.raise_for_status()
                 return await response.text()

@@ -7,12 +7,15 @@
 - 유사도 기반 유사 뉴스 제거
 - TTL 기반 캐시 만료
 - 메모리 제한 (LRU 방식)
+- JSON 파일 영속화 (재시작 시에도 캐시 유지)
 """
 
 import hashlib
+import json
 import logging
 import time
 from collections import OrderedDict
+from pathlib import Path
 from typing import Optional
 
 from ..core.filter import NewsFilter
@@ -25,6 +28,7 @@ class DeduplicationFilter(NewsFilter):
     """중복 제거 필터
 
     해시 기반으로 동일한 뉴스를 필터링합니다.
+    JSON 파일로 캐시를 영속화하여 프로그램 재시작 시에도 중복 제거 유지.
     """
 
     def __init__(
@@ -32,21 +36,35 @@ class DeduplicationFilter(NewsFilter):
         max_cache_size: int = 10000,
         ttl_seconds: float = 86400.0,  # 24시간
         use_content_hash: bool = True,
+        cache_file: Optional[str] = None,
+        save_interval: int = 10,
     ):
         """
         Args:
             max_cache_size: 최대 캐시 크기 (LRU 방식으로 오래된 것 제거)
             ttl_seconds: 캐시 만료 시간 (초)
             use_content_hash: True면 내용 기반 해시, False면 ID 기반
+            cache_file: 캐시 저장 파일 경로 (None이면 영속화 비활성화)
+            save_interval: N개의 새 뉴스마다 캐시 저장 (디스크 I/O 최적화)
         """
         self.max_cache_size = max_cache_size
         self.ttl_seconds = ttl_seconds
         self.use_content_hash = use_content_hash
+        self.cache_file = Path(cache_file) if cache_file else None
+        self.save_interval = save_interval
+        self._unsaved_count = 0
 
         # OrderedDict로 LRU 캐시 구현 (해시 -> 타임스탬프)
         self._cache: OrderedDict[str, float] = OrderedDict()
 
-        logger.info(f"DeduplicationFilter 초기화: 캐시 크기 {max_cache_size}, TTL {ttl_seconds}초")
+        # 기존 캐시 파일 로드
+        if self.cache_file:
+            self._load_cache()
+
+        logger.info(
+            f"DeduplicationFilter 초기화: 캐시 크기 {max_cache_size}, TTL {ttl_seconds}초, "
+            f"영속화 {'활성화' if self.cache_file else '비활성화'}"
+        )
 
     def _compute_hash(self, item: NewsItem) -> str:
         """뉴스 아이템의 해시 계산"""
@@ -85,6 +103,46 @@ class DeduplicationFilter(NewsFilter):
             del self._cache[oldest_key]
             logger.debug(f"캐시 크기 초과, 오래된 항목 제거: {oldest_key}")
 
+    def _load_cache(self) -> None:
+        """JSON 파일에서 캐시 로드"""
+        if not self.cache_file or not self.cache_file.exists():
+            logger.info("캐시 파일 없음, 빈 캐시로 시작")
+            return
+
+        try:
+            with open(self.cache_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            current_time = time.time()
+            loaded_count = 0
+
+            for hash_key, timestamp in data.items():
+                if current_time - timestamp <= self.ttl_seconds:
+                    self._cache[hash_key] = timestamp
+                    loaded_count += 1
+
+            self._enforce_max_size()
+            logger.info(f"캐시 파일 로드 완료: {loaded_count}개 항목 (만료 제외)")
+        except json.JSONDecodeError as e:
+            logger.warning(f"캐시 파일 파싱 실패, 빈 캐시로 시작: {e}")
+        except Exception as e:
+            logger.warning(f"캐시 파일 로드 실패: {e}")
+
+    def _save_cache(self) -> None:
+        """캐시를 JSON 파일로 저장"""
+        if not self.cache_file:
+            return
+
+        try:
+            self.cache_file.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(self.cache_file, "w", encoding="utf-8") as f:
+                json.dump(dict(self._cache), f)
+
+            logger.debug(f"캐시 파일 저장 완료: {len(self._cache)}개 항목")
+        except Exception as e:
+            logger.error(f"캐시 파일 저장 실패: {e}")
+
     def should_pass(self, item: NewsItem) -> bool:
         """중복 여부 확인
 
@@ -111,12 +169,28 @@ class DeduplicationFilter(NewsFilter):
         # 최대 크기 유지
         self._enforce_max_size()
 
+        # 주기적으로 캐시 저장 (디스크 I/O 최적화)
+        self._unsaved_count += 1
+        if self._unsaved_count >= self.save_interval:
+            self._save_cache()
+            self._unsaved_count = 0
+
         return True
 
     def clear_cache(self) -> None:
         """캐시 초기화"""
         self._cache.clear()
+        self._unsaved_count = 0
+        if self.cache_file and self.cache_file.exists():
+            self.cache_file.unlink()
         logger.info("DeduplicationFilter 캐시 초기화")
+
+    def flush(self) -> None:
+        """미저장 캐시를 즉시 저장 (프로그램 종료 시 호출)"""
+        if self._unsaved_count > 0:
+            self._save_cache()
+            self._unsaved_count = 0
+            logger.info("캐시 플러시 완료")
 
     @property
     def cache_size(self) -> int:

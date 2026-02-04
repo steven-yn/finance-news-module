@@ -45,9 +45,11 @@ class NewsOrchestrator:
     ):
         self.sources = sources
         self.notifier = notifier
+        self.filters = filters or []
         self.filter = CompositeFilter(filters) if filters else PassAllFilter()
         self._tasks: list[asyncio.Task] = []
         self._running = False
+        self._input_task: Optional[asyncio.Task] = None
 
     async def run(self) -> None:
         """모든 소스 동시 실행"""
@@ -62,12 +64,54 @@ class NewsOrchestrator:
         # 각 소스를 별도 태스크로 실행
         self._tasks = [asyncio.create_task(self._process_source(source)) for source in self.sources]
 
+        # 키보드 입력 처리 태스크
+        self._input_task = asyncio.create_task(self._handle_input())
+
         try:
-            await asyncio.gather(*self._tasks)
+            await asyncio.gather(*self._tasks, self._input_task)
         except asyncio.CancelledError:
             logger.info("태스크 취소됨")
         finally:
             await self.stop()
+
+    def refresh(self) -> None:
+        """모든 소스 수동 새로고침"""
+        logger.info("=" * 40)
+        logger.info("수동 새로고침 실행")
+        logger.info("=" * 40)
+        for source in self.sources:
+            if hasattr(source, "trigger_refresh"):
+                source.trigger_refresh()
+
+    async def _handle_input(self) -> None:
+        """키보드 입력 처리 (r: 새로고침, q: 종료)"""
+        print("\n" + "=" * 50)
+        print("명령어: [r] 새로고침 | [q] 종료")
+        print("=" * 50 + "\n")
+
+        loop = asyncio.get_event_loop()
+        reader = asyncio.StreamReader()
+        protocol = asyncio.StreamReaderProtocol(reader)
+        await loop.connect_read_pipe(lambda: protocol, sys.stdin)
+
+        while self._running:
+            try:
+                line = await reader.readline()
+                if not line:
+                    break
+
+                cmd = line.decode().strip().lower()
+                if cmd == "r":
+                    self.refresh()
+                elif cmd == "q":
+                    logger.info("종료 명령 수신")
+                    await self.stop()
+                    break
+                elif cmd == "h" or cmd == "help":
+                    print("\n명령어: [r] 새로고침 | [q] 종료\n")
+            except Exception as e:
+                logger.debug(f"입력 처리 에러: {e}")
+                break
 
     async def stop(self) -> None:
         """모든 소스 및 알림 종료"""
@@ -76,6 +120,10 @@ class NewsOrchestrator:
 
         self._running = False
         logger.info("NewsOrchestrator 종료 중...")
+
+        # 입력 태스크 취소
+        if self._input_task and not self._input_task.done():
+            self._input_task.cancel()
 
         for task in self._tasks:
             if not task.done():
@@ -91,6 +139,14 @@ class NewsOrchestrator:
             await self.notifier.stop()
         except Exception as e:
             logger.error(f"알림기 종료 에러: {e}")
+
+        # 필터 캐시 플러시 (영속화)
+        for f in self.filters:
+            if hasattr(f, "flush"):
+                try:
+                    f.flush()
+                except Exception as e:
+                    logger.error(f"필터 캐시 플러시 에러: {e}")
 
         logger.info("NewsOrchestrator 종료 완료")
 
@@ -122,15 +178,16 @@ def create_sources(settings: Settings) -> list[NewsSource]:
     """설정 기반으로 소스 생성"""
     sources: list[NewsSource] = []
 
-    # Finnhub (WebSocket)
+    # Finnhub (REST API Polling)
     if settings.finnhub_api_key:
         sources.append(
             FinnhubSource(
                 api_key=settings.finnhub_api_key,
-                symbols=settings.finnhub_symbols,
+                categories=settings.finnhub_categories,
+                interval=settings.finnhub_poll_interval,
             )
         )
-        logger.info(f"Finnhub 소스 추가: {len(settings.finnhub_symbols)}개 심볼")
+        logger.info(f"Finnhub 소스 추가: {', '.join(settings.finnhub_categories)} 카테고리")
 
     # RSS (Polling)
     if settings.rss_feeds:
@@ -172,14 +229,15 @@ def create_filters(settings: Settings) -> list[NewsFilter]:
     """설정 기반으로 필터 생성"""
     filters: list[NewsFilter] = []
 
-    # 중복 제거 필터 (항상 적용)
-    filters.append(
-        DeduplicationFilter(
-            max_cache_size=10000,
-            ttl_seconds=86400.0,  # 24시간
-        )
+    # 중복 제거 필터 (항상 적용, JSON 영속화)
+    dedup_filter = DeduplicationFilter(
+        max_cache_size=10000,
+        ttl_seconds=86400.0,  # 24시간
+        cache_file=settings.dedup_cache_file,
+        save_interval=settings.dedup_save_interval,
     )
-    logger.info("중복 제거 필터 추가")
+    filters.append(dedup_filter)
+    logger.info(f"중복 제거 필터 추가 (캐시: {settings.dedup_cache_file})")
 
     # 키워드 필터
     if settings.keyword_filters:

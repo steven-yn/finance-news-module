@@ -165,6 +165,7 @@ class PollingNewsSource(NewsSource):
     - 폴링 루프
     - 중복 체크 (seen_ids, LRU 방식 메모리 관리)
     - 에러 핸들링
+    - 수동 새로고침 트리거
     """
 
     MAX_SEEN_IDS = 10000  # 최대 캐시 크기
@@ -173,6 +174,7 @@ class PollingNewsSource(NewsSource):
         self.interval = interval
         self._running = False
         self._seen_ids: dict[str, None] = {}  # OrderedDict처럼 사용 (삽입 순서 유지)
+        self._refresh_event = asyncio.Event()  # 수동 새로고침 트리거
 
     async def connect(self) -> None:
         """연결 시작"""
@@ -183,7 +185,13 @@ class PollingNewsSource(NewsSource):
     async def disconnect(self) -> None:
         """연결 종료"""
         self._running = False
+        self._refresh_event.set()  # 대기 중인 sleep 깨우기
         logger.info(f"[{self.name}] 폴링 종료")
+
+    def trigger_refresh(self) -> None:
+        """수동 새로고침 트리거 (다음 폴링 즉시 실행)"""
+        self._refresh_event.set()
+        logger.info(f"[{self.name}] 수동 새로고침 트리거됨")
 
     def _add_seen_id(self, item_id: str) -> None:
         """seen_ids에 ID 추가 (LRU 방식으로 최대 크기 유지)"""
@@ -208,14 +216,26 @@ class PollingNewsSource(NewsSource):
         while self._running:
             try:
                 items = await self.fetch()
-                logger.debug(f"[{self.name}] {len(items)}개 아이템 가져옴")
+                new_count = 0
 
                 for item in items:
                     if item.id not in self._seen_ids:
                         self._add_seen_id(item.id)
+                        new_count += 1
                         yield item
+
+                logger.info(f"[{self.name}] {len(items)}개 중 {new_count}개 새 뉴스 발견")
 
             except Exception as e:
                 logger.error(f"[{self.name}] Fetch 에러: {e}")
 
-            await asyncio.sleep(self.interval)
+            # 수동 새로고침 또는 interval 대기
+            self._refresh_event.clear()
+            try:
+                await asyncio.wait_for(
+                    self._refresh_event.wait(),
+                    timeout=self.interval,
+                )
+                logger.debug(f"[{self.name}] 수동 새로고침으로 폴링 재개")
+            except asyncio.TimeoutError:
+                pass  # 정상적인 interval 경과

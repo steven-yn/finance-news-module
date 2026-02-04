@@ -1,96 +1,142 @@
-"""Finnhub WebSocket 뉴스 소스"""
+"""Finnhub REST API 뉴스 소스"""
 
-import json
+import asyncio
+import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-import websockets
+import aiohttp
 
-from ..core.source import WebSocketNewsSource
+from ..core.source import PollingNewsSource
 from ..core.types import NewsCategory, NewsItem
 
 logger = logging.getLogger(__name__)
 
 
-class FinnhubSource(WebSocketNewsSource):
-    """Finnhub WebSocket 뉴스 소스
+class FinnhubSource(PollingNewsSource):
+    """Finnhub REST API 뉴스 소스
 
-    실시간 뉴스를 WebSocket을 통해 수신합니다.
-    - 암호화폐 뉴스 (CRYPTO:BTC, CRYPTO:ETH 등)
-    - 주식 뉴스 (AAPL, TSLA 등)
+    REST API를 통해 주기적으로 뉴스를 폴링합니다.
+    - 일반 뉴스 (category=general)
+    - 암호화폐 뉴스 (category=crypto)
+    - 외환 뉴스 (category=forex)
+    - 병합 뉴스 (category=merger)
+
+    참고: WebSocket 뉴스 구독은 유료 플랜 전용이므로 REST API 사용
     """
 
-    def __init__(self, api_key: str, symbols: list[str]):
+    BASE_URL = "https://finnhub.io/api/v1"
+
+    def __init__(
+        self,
+        api_key: str,
+        categories: list[str] = None,
+        interval: float = 300.0,
+    ):
         """
         Args:
             api_key: Finnhub API 키
-            symbols: 구독할 심볼 리스트 (예: ["CRYPTO:BTC", "AAPL"])
+            categories: 뉴스 카테고리 리스트 (기본값: ["general", "crypto"])
+            interval: 폴링 간격 (초), 기본 300초 (5분)
         """
-        url = f"wss://ws.finnhub.io?token={api_key}"
-        super().__init__(url)
+        super().__init__(interval)
         self.api_key = api_key
-        self.symbols = symbols
+        self.categories = categories or ["general", "crypto"]
+        self._session: Optional[aiohttp.ClientSession] = None
 
     @property
     def name(self) -> str:
         return "finnhub"
 
     async def connect(self) -> None:
-        """연결 시작"""
+        """연결 시작 (HTTP 세션 생성)"""
+        self._session = aiohttp.ClientSession()
         await super().connect()
-        logger.info(f"[{self.name}] {len(self.symbols)}개 심볼 구독 예정")
+        logger.info(f"[{self.name}] Finnhub REST API 뉴스 폴링 시작: {', '.join(self.categories)}")
 
-    async def _on_connected(self, ws: websockets.WebSocketClientProtocol) -> None:
-        """연결 후 심볼 구독"""
-        for symbol in self.symbols:
-            subscribe_msg = json.dumps({"type": "subscribe-news", "symbol": symbol})
-            await ws.send(subscribe_msg)
-            logger.debug(f"[{self.name}] 구독: {symbol}")
-        logger.info(f"[{self.name}] {len(self.symbols)}개 심볼 구독 완료")
+    async def disconnect(self) -> None:
+        """연결 종료 (HTTP 세션 해제)"""
+        if self._session:
+            await self._session.close()
+            self._session = None
+        await super().disconnect()
 
-    async def _process_message(self, data: dict) -> list[NewsItem]:
-        """메시지 처리 (배열 형태의 뉴스 처리)"""
-        msg_type = data.get("type")
+    async def fetch(self) -> list[NewsItem]:
+        """모든 카테고리의 뉴스 가져오기"""
+        if not self._session:
+            raise RuntimeError("connect()를 먼저 호출해야 합니다")
 
-        # Ping 메시지는 무시
-        if msg_type == "ping":
-            logger.debug(f"[{self.name}] Received ping")
+        all_items = []
+
+        for category in self.categories:
+            try:
+                items = await self._fetch_category_news(category)
+                all_items.extend(items)
+            except Exception as e:
+                logger.error(f"[{self.name}] 카테고리 {category} 뉴스 조회 에러: {e}")
+
+        # 발행 시간 기준 내림차순 정렬
+        all_items.sort(key=lambda x: x.published_at, reverse=True)
+
+        logger.debug(f"[{self.name}] 총 {len(all_items)}개 뉴스 가져옴")
+        return all_items
+
+    async def _fetch_category_news(self, category: str) -> list[NewsItem]:
+        """특정 카테고리의 뉴스 가져오기
+
+        Args:
+            category: 뉴스 카테고리 (general, crypto, forex, merger)
+
+        Returns:
+            NewsItem 리스트
+        """
+        url = f"{self.BASE_URL}/news"
+        params = {
+            "category": category,
+            "token": self.api_key,
+        }
+
+        try:
+            async with self._session.get(url, params=params, timeout=10) as response:
+                if response.status != 200:
+                    logger.warning(
+                        f"[{self.name}] 뉴스 조회 실패 (category={category}): "
+                        f"HTTP {response.status}"
+                    )
+                    return []
+
+                data = await response.json()
+
+                if not isinstance(data, list):
+                    logger.warning(f"[{self.name}] 잘못된 응답 형식: {type(data)}")
+                    return []
+
+                items = []
+                for news_dict in data:
+                    item = self._parse_news_item(news_dict, category)
+                    if item:
+                        items.append(item)
+
+                logger.debug(f"[{self.name}] 카테고리 {category}: {len(items)}개 뉴스 파싱 완료")
+                return items
+
+        except asyncio.TimeoutError:
+            logger.warning(f"[{self.name}] 뉴스 조회 타임아웃 (category={category})")
+            return []
+        except aiohttp.ClientError as e:
+            logger.error(f"[{self.name}] 네트워크 에러 (category={category}): {e}")
+            return []
+        except Exception as e:
+            logger.error(f"[{self.name}] 뉴스 조회 실패 (category={category}): {e}")
             return []
 
-        # 뉴스 메시지 처리 - 배열의 모든 아이템 반환
-        if msg_type == "news":
-            news_data = data.get("data", [])
-            items = []
-            for news_dict in news_data:
-                item = self._parse_news_item(news_dict)
-                if item:
-                    items.append(item)
-            return items
-
-        # 알 수 없는 메시지 타입
-        if msg_type and msg_type not in ["ping", "news"]:
-            logger.warning(f"[{self.name}] Unknown message type: {msg_type}")
-
-        return []
-
-    async def _parse_message(self, data: dict) -> Optional[NewsItem]:
-        """단일 메시지 파싱 (베이스 클래스 인터페이스 충족용)
-
-        Note: 실제 처리는 _process_message()에서 수행
-        """
-        msg_type = data.get("type")
-        if msg_type == "news":
-            news_data = data.get("data", [])
-            if news_data:
-                return self._parse_news_item(news_data[0])
-        return None
-
-    def _parse_news_item(self, item: dict) -> Optional[NewsItem]:
+    def _parse_news_item(self, item: dict, category: str) -> Optional[NewsItem]:
         """뉴스 아이템 파싱
 
         Args:
             item: 뉴스 데이터 딕셔너리
+            category: 뉴스 카테고리
 
         Returns:
             NewsItem 또는 None
@@ -100,7 +146,7 @@ class FinnhubSource(WebSocketNewsSource):
             headline = item.get("headline")
 
             if not news_id or not headline:
-                logger.warning(f"[{self.name}] Missing required fields in news item")
+                logger.debug(f"[{self.name}] 필수 필드 누락 (id 또는 headline)")
                 return None
 
             # 타임스탬프 파싱 (Unix timestamp in seconds)
@@ -111,25 +157,33 @@ class FinnhubSource(WebSocketNewsSource):
                 published_at = datetime.now(timezone.utc)
 
             # 카테고리 결정
-            category_str = item.get("category", "").lower()
-            category = NewsCategory.CRYPTO if "crypto" in category_str else NewsCategory.BREAKING
+            news_category_str = item.get("category", "").lower()
+            if "crypto" in category or "crypto" in news_category_str:
+                news_category = NewsCategory.CRYPTO
+            elif category == "merger" or "merger" in news_category_str:
+                news_category = NewsCategory.BREAKING
+            else:
+                news_category = NewsCategory.BREAKING
 
             # 관련 심볼 파싱
             related = item.get("related", "")
-            symbols = [related] if related else []
+            symbols = [s.strip() for s in related.split(",") if s.strip()] if related else []
+
+            # 고유 ID 생성 (Finnhub ID + 카테고리 해시)
+            unique_id = hashlib.md5(f"{news_id}_{category}".encode()).hexdigest()[:16]
 
             return NewsItem(
-                id=str(news_id),
+                id=unique_id,
                 headline=headline,
                 summary=item.get("summary"),
                 url=item.get("url"),
-                source=self.name,
-                category=category,
+                source=item.get("source", self.name),
+                category=news_category,
                 published_at=published_at,
                 symbols=symbols,
                 raw=item,
             )
 
         except Exception as e:
-            logger.error(f"[{self.name}] Error parsing news item: {e}")
+            logger.error(f"[{self.name}] 뉴스 아이템 파싱 에러: {e}")
             return None
