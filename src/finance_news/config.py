@@ -1,9 +1,14 @@
 """설정 관리 (pydantic-settings 기반)"""
 
+from pathlib import Path
 from typing import Optional
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# 프로젝트 루트 디렉토리 (config.py 위치: src/finance_news/config.py)
+# config.py → finance_news → src → finance-news (프로젝트 루트)
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 
 class Settings(BaseSettings):
@@ -116,13 +121,14 @@ class Settings(BaseSettings):
         default=["bitcoin", "crypto", "ethereum", "blockchain", "btc", "eth"],
         description="뉴스 필터링 키워드",
     )
-    dedup_cache_file: str = Field(
-        default=".cache/news_dedup.json",
-        description="중복 제거 캐시 파일 경로",
+    # Database Settings
+    db_path: str = Field(
+        default=str(PROJECT_ROOT / ".data" / "news.db"),
+        description="SQLite 데이터베이스 파일 경로 (절대 경로)",
     )
-    dedup_save_interval: int = Field(
-        default=10,
-        description="캐시 저장 간격 (N개 뉴스마다 저장)",
+    db_retention_days: int = Field(
+        default=30,
+        description="뉴스 보관 일수 (이전 뉴스 자동 삭제)",
     )
 
     # Logging

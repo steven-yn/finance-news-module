@@ -52,3 +52,7 @@ Thumbs.db
 
 # Project specific
 config/settings.yaml
+
+# Data & Cache
+.data/
+.cache/
