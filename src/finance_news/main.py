@@ -14,6 +14,7 @@
 import asyncio
 import logging
 import signal
+import sqlite3
 import sys
 from typing import Optional
 
@@ -25,7 +26,8 @@ from .config import Settings, load_settings
 from .core.filter import CompositeFilter, NewsFilter, PassAllFilter
 from .core.source import NewsSource
 from .core.types import NewsItem
-from .filters import DeduplicationFilter, KeywordFilter
+from .db import NewsRepository, init_db
+from .filters import KeywordFilter
 from .sources import FinnhubSource, FREDSource, RSSSource, SECSource
 
 logger = logging.getLogger(__name__)
@@ -41,10 +43,12 @@ class NewsOrchestrator:
         self,
         sources: list[NewsSource],
         notifier: Notifier,
+        repository: NewsRepository,
         filters: Optional[list[NewsFilter]] = None,
     ):
         self.sources = sources
         self.notifier = notifier
+        self.repository = repository
         self.filters = filters or []
         self.filter = CompositeFilter(filters) if filters else PassAllFilter()
         self._tasks: list[asyncio.Task] = []
@@ -84,9 +88,9 @@ class NewsOrchestrator:
                 source.trigger_refresh()
 
     async def _handle_input(self) -> None:
-        """키보드 입력 처리 (r: 새로고침, q: 종료)"""
+        """키보드 입력 처리 (r: 새로고침, s: 통계, q: 종료)"""
         print("\n" + "=" * 50)
-        print("명령어: [r] 새로고침 | [q] 종료")
+        print("명령어: [r] 새로고침 | [s] 통계 | [q] 종료")
         print("=" * 50 + "\n")
 
         loop = asyncio.get_event_loop()
@@ -103,15 +107,32 @@ class NewsOrchestrator:
                 cmd = line.decode().strip().lower()
                 if cmd == "r":
                     self.refresh()
+                elif cmd == "s":
+                    self._print_stats()
                 elif cmd == "q":
                     logger.info("종료 명령 수신")
                     await self.stop()
                     break
                 elif cmd == "h" or cmd == "help":
-                    print("\n명령어: [r] 새로고침 | [q] 종료\n")
+                    print("\n명령어: [r] 새로고침 | [s] 통계 | [q] 종료\n")
             except Exception as e:
                 logger.debug(f"입력 처리 에러: {e}")
                 break
+
+    def _print_stats(self) -> None:
+        """DB 통계 출력"""
+        stats = self.repository.get_stats()
+        print("\n" + "=" * 50)
+        print(f"총 뉴스: {stats['total']}개 | 알림 발송: {stats['notified']}개")
+        print("-" * 50)
+        print("소스별:")
+        for source, count in stats["by_source"].items():
+            print(f"  {source}: {count}개")
+        print("-" * 50)
+        print("카테고리별:")
+        for category, count in stats["by_category"].items():
+            print(f"  {category}: {count}개")
+        print("=" * 50 + "\n")
 
     async def stop(self) -> None:
         """모든 소스 및 알림 종료"""
@@ -140,14 +161,6 @@ class NewsOrchestrator:
         except Exception as e:
             logger.error(f"알림기 종료 에러: {e}")
 
-        # 필터 캐시 플러시 (영속화)
-        for f in self.filters:
-            if hasattr(f, "flush"):
-                try:
-                    f.flush()
-                except Exception as e:
-                    logger.error(f"필터 캐시 플러시 에러: {e}")
-
         logger.info("NewsOrchestrator 종료 완료")
 
     async def _process_source(self, source: NewsSource) -> None:
@@ -159,15 +172,30 @@ class NewsOrchestrator:
                 if not self._running:
                     break
 
-                if self.filter.should_pass(item):
-                    message = news_item_to_message(item)
-                    try:
-                        await self.notifier.send(message)
-                        logger.info(f"[{source.name}] 알림 발송: {item.headline[:60]}...")
-                    except Exception as e:
-                        logger.error(f"[{source.name}] 알림 발송 실패: {e}")
-                else:
-                    logger.debug(f"[{source.name}] 필터링됨: {item.headline[:60]}...")
+                # DB 중복 체크 (이미 저장된 뉴스는 스킵)
+                if self.repository.exists(item):
+                    logger.debug(f"[{source.name}] 중복 뉴스: {item.headline[:50]}...")
+                    continue
+
+                # 키워드 필터 적용
+                if not self.filter.should_pass(item):
+                    # 필터링된 뉴스도 DB에 저장 (알림 미발송)
+                    self.repository.save(item, notified=False)
+                    logger.debug(f"[{source.name}] 필터링됨: {item.headline[:50]}...")
+                    continue
+
+                # 알림 발송
+                message = news_item_to_message(item)
+                try:
+                    await self.notifier.send(message)
+                    # 발송 성공 시 DB 저장 (알림 발송 표시)
+                    self.repository.save(item, notified=True)
+                    logger.info(f"[{source.name}] 알림 발송: {item.headline[:60]}...")
+                except Exception as e:
+                    # 발송 실패해도 DB에 저장 (재시도 방지)
+                    self.repository.save(item, notified=False)
+                    logger.error(f"[{source.name}] 알림 발송 실패: {e}")
+
         except asyncio.CancelledError:
             logger.info(f"[{source.name}] 태스크 취소됨")
         except Exception as e:
@@ -229,17 +257,7 @@ def create_filters(settings: Settings) -> list[NewsFilter]:
     """설정 기반으로 필터 생성"""
     filters: list[NewsFilter] = []
 
-    # 중복 제거 필터 (항상 적용, JSON 영속화)
-    dedup_filter = DeduplicationFilter(
-        max_cache_size=10000,
-        ttl_seconds=86400.0,  # 24시간
-        cache_file=settings.dedup_cache_file,
-        save_interval=settings.dedup_save_interval,
-    )
-    filters.append(dedup_filter)
-    logger.info(f"중복 제거 필터 추가 (캐시: {settings.dedup_cache_file})")
-
-    # 키워드 필터
+    # 키워드 필터 (중복 제거는 DB에서 처리)
     if settings.keyword_filters:
         filters.append(
             KeywordFilter(
@@ -276,6 +294,16 @@ async def main():
     # 로그 레벨 설정
     logging.getLogger().setLevel(getattr(logging, settings.log_level.upper()))
 
+    # 데이터베이스 초기화
+    conn = init_db(settings.db_path)
+    repository = NewsRepository(conn)
+    logger.info(f"데이터베이스 연결 완료: {settings.db_path}")
+
+    # 오래된 뉴스 정리
+    deleted = repository.delete_old(settings.db_retention_days)
+    if deleted > 0:
+        logger.info(f"{settings.db_retention_days}일 이전 뉴스 {deleted}개 삭제")
+
     # 소스 생성
     sources = create_sources(settings)
     if not sources:
@@ -292,6 +320,7 @@ async def main():
     orchestrator = NewsOrchestrator(
         sources=sources,
         notifier=notifier,
+        repository=repository,
         filters=filters,
     )
 
@@ -309,6 +338,8 @@ async def main():
     logger.info("=" * 60)
     logger.info("Finance News 오케스트레이터 시작")
     logger.info(f"소스: {len(sources)}개, 필터: {len(filters)}개")
+    stats = repository.get_stats()
+    logger.info(f"DB 저장 뉴스: {stats['total']}개")
     logger.info("=" * 60)
 
     try:
@@ -317,6 +348,8 @@ async def main():
         logger.info("키보드 인터럽트")
     finally:
         await orchestrator.stop()
+        conn.close()
+        logger.info("데이터베이스 연결 종료")
 
 
 if __name__ == "__main__":
